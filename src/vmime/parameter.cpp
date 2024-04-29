@@ -150,6 +150,16 @@ void parameter::parse(
 	std::ostringstream value;
 	value.imbue(std::locale::classic());
 
+    std::string temp;
+
+    size_t reserve_sz = 0;
+    for (const auto& item : chunks)
+    {
+        reserve_sz += item.data.size();
+    }
+
+    temp.reserve(reserve_sz);
+
 	for (std::vector <valueChunk>::size_type i = 0 ; i < chunks.size() ; ++i) {
 
 		const valueChunk& chunk = chunks[i];
@@ -255,29 +265,37 @@ void parameter::parse(
 			// Using 'vmime::text' to parse the data is safe even
 			// if the data is not encoded, because it can recover
 			// from parsing errors.
-			vmime::text t;
-			t.parse(ctx, chunk.data);
 
-			if (t.getWordCount() != 0) {
+            // HACK: RFC-2047 allows multiple charsets inside string.
+			// Example (without actual string, second utf-8 splitted by chunks):
+			//            name*0="=?UTF-8?Q?SOMELOOOO?=
+			//         =?UT";
+			//            name*1="F-8?Q?OONGFILENAME?="
+            temp += chunk.data;
+            if (i == chunks.size() - 1) {
+                vmime::text t;
+                t.parse(ctx, temp);
 
-				value << t.getWholeBuffer();
+                if (t.getWordCount() != 0) {
+                    value << t.getWholeBuffer();
 
-				if (!foundCharsetChunk) {
+                    if (!foundCharsetChunk) {
 
-					// This is still wrong. Each word can have it's own charset, and can
-					// be mixed (eg. iso-8859-1 and iso-2022-jp), but very unlikely. Real
-					// fix is to have parameters store a vmime::text instead of a
-					// vmime::word in m_value. But that changes the interface.
-					for (size_t i = 0 ; i < t.getWordCount() ; ++i) {
+                        // This is still wrong. Each word can have it's own charset, and can
+                        // be mixed (eg. iso-8859-1 and iso-2022-jp), but very unlikely. Real
+                        // fix is to have parameters store a vmime::text instead of a
+                        // vmime::word in m_value. But that changes the interface.
+                        for (size_t i = 0 ; i < t.getWordCount() ; ++i) {
 
-						if (t.getWordAt(i)->getCharset() != ch && ch == charsets::US_ASCII) {
+                            if (t.getWordAt(i)->getCharset() != ch && ch == charsets::US_ASCII) {
 
-							ch = t.getWordAt(i)->getCharset();
-							break;
-						}
-					}
-				}
-			}
+                                ch = t.getWordAt(i)->getCharset();
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
 		}
 	}
 
